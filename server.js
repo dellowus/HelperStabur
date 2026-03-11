@@ -81,14 +81,14 @@ app.post('/api/chat', async (req, res) => {
     const footer = '\n\nВсе вопросы и уточнения пишите на help@psvyaz.ru';
 
     res.json({
-      answer: (answer || 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129, info@psve.ru.') + footer,
+      answer: (answer || 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129.') + footer,
       source: answer ? 'knowledge' : 'fallback'
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({
       error: 'Ошибка сервера',
-      answer: 'Произошла ошибка. Попробуйте позже или напишите нам: info@psve.ru.'
+      answer: 'Произошла ошибка. Попробуйте позже.' + footer
     });
   }
 });
