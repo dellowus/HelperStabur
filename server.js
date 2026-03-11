@@ -8,6 +8,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const geoip = require('geoip-lite');
+const { answerWithRag } = require('./rag');
 
 const app = express();
 // Чтобы корректно получать IP за прокси (Railway, Cloudflare, Nginx)
@@ -79,8 +80,18 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Пустое сообщение', answer: null });
     }
 
-    // Пытаемся дать умный ответ по базе знаний
-    const answer = getAnswer(text);
+    // 1) Пытаемся ответить через LLM+документы (RAG), если включено
+    let answer = null;
+    try {
+      if ((process.env.RAG_ENABLED || '').toLowerCase() === 'true') {
+        answer = await answerWithRag(text);
+      }
+    } catch (e) {
+      console.error('RAG/LLM error:', e?.message || e);
+    }
+
+    // 2) Если RAG не дал ответа — берём базу знаний по ключевым словам
+    if (!answer) answer = getAnswer(text);
     const footer = '\n\nВсе вопросы и уточнения пишите на help@psvyaz.ru';
     const finalAnswer = (answer || 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129.') + footer;
 
@@ -96,7 +107,7 @@ app.post('/api/chat', async (req, res) => {
 
     res.json({
       answer: finalAnswer,
-      source: answer ? 'knowledge' : 'fallback'
+      source: answer ? ((process.env.RAG_ENABLED || '').toLowerCase() === 'true' ? 'rag_or_knowledge' : 'knowledge') : 'fallback'
     });
   } catch (e) {
     console.error(e);
