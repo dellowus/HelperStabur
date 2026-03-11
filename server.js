@@ -7,8 +7,11 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const geoip = require('geoip-lite');
 
 const app = express();
+// Чтобы корректно получать IP за прокси (Railway, Cloudflare, Nginx)
+app.set('trust proxy', true);
 const PORT = process.env.PORT || 3000;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
@@ -37,12 +40,15 @@ async function sendToTelegram(text, meta = {}) {
     return;
   }
   const fullText = [
-    '💬 Вопрос с сайта psve.ru',
+    '💬 Вопрос с сайта',
     '',
-    text,
+    meta.page ? `1) Откуда: ${meta.page}` : '1) Откуда: (неизвестно)',
+    meta.referrer ? `   Referrer: ${meta.referrer}` : '',
+    meta.location ? `2) Локация: ${meta.location}` : '2) Локация: (не определена)',
     '',
-    meta.page ? `📄 Страница: ${meta.page}` : '',
-    meta.referrer ? `🔗 Откуда: ${meta.referrer}` : ''
+    `3) Вопрос: ${text}`,
+    '',
+    meta.answer ? `4) Ответ бота: ${meta.answer}` : '4) Ответ бота: (не сформирован)'
   ].filter(Boolean).join('\n');
 
   const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
@@ -73,22 +79,30 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Пустое сообщение', answer: null });
     }
 
-    // Сначала отправляем в Telegram (асинхронно, не блокируем ответ)
-    sendToTelegram(text, { page, referrer }).catch(e => console.error('Telegram:', e));
-
     // Пытаемся дать умный ответ по базе знаний
     const answer = getAnswer(text);
     const footer = '\n\nВсе вопросы и уточнения пишите на help@psvyaz.ru';
+    const finalAnswer = (answer || 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129.') + footer;
+
+    // Геолокация по IP (очень грубо, но без внешних сервисов)
+    const ip = (req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim() || req.ip;
+    const geo = ip ? geoip.lookup(ip) : null;
+    const location = geo
+      ? [geo.country, geo.region, geo.city].filter(Boolean).join(', ')
+      : null;
+
+    // Отправляем в Telegram (асинхронно, не блокируем ответ)
+    sendToTelegram(text, { page, referrer, location, answer: finalAnswer }).catch(e => console.error('Telegram:', e));
 
     res.json({
-      answer: (answer || 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129.') + footer,
+      answer: finalAnswer,
       source: answer ? 'knowledge' : 'fallback'
     });
   } catch (e) {
     console.error(e);
     res.status(500).json({
       error: 'Ошибка сервера',
-      answer: 'Произошла ошибка. Попробуйте позже.' + footer
+      answer: 'Произошла ошибка. Попробуйте позже.\n\nВсе вопросы и уточнения пишите на help@psvyaz.ru'
     });
   }
 });
