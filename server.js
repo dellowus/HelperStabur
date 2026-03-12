@@ -71,6 +71,12 @@ async function sendToTelegram(text, meta = {}) {
 // Загрузка базы знаний для ответов
 const { getAnswer } = require('./knowledge');
 
+function hasModelLikeCode(text) {
+  // Примитивная эвристика: сочетание букв/цифр длиной >=4 (ETH232, PLC100, HMI07 и т.п.)
+  if (!text) return false;
+  return /[A-Za-zА-Яа-я]{2,}\d{2,}/.test(text);
+}
+
 // Единственный публичный endpoint: принять вопрос, отправить в Telegram, вернуть ответ
 app.post('/api/chat', async (req, res) => {
   try {
@@ -90,10 +96,24 @@ app.post('/api/chat', async (req, res) => {
       console.error('RAG/LLM error:', e?.message || e);
     }
 
-    // 2) Если RAG не дал ответа — берём базу знаний по ключевым словам
-    if (!answer) answer = getAnswer(text);
+    // 2) Если RAG не дал ответа — опционально берём базу знаний по ключевым словам
+    let source = 'fallback';
+    if (!answer) {
+      // Если вопрос выглядит как запрос по конкретной модели/индексу (ETH232 и т.п.),
+      // лучше честно сказать, что точного ответа нет, чем давать общий текст.
+      if (!hasModelLikeCode(text)) {
+        answer = getAnswer(text);
+        if (answer) source = 'knowledge';
+      }
+    } else {
+      source = 'rag';
+    }
     const footer = '\n\nВсе вопросы и уточнения пишите на help@psvyaz.ru';
-    const finalAnswer = (answer || 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129.') + footer;
+    const baseFallback = hasModelLikeCode(text)
+      ? 'По этому конкретному модулю или обозначению я не нашёл в документации точного ответа. Пожалуйста, уточните вопрос у специалистов.'
+      : 'Спасибо за вопрос! Мы получили ваше сообщение и ответим в ближайшее время. Также можете связаться с нами: +7 (343) 364-42-60 доб. 129.';
+
+    const finalAnswer = (answer || baseFallback) + footer;
 
     // Геолокация по IP (очень грубо, но без внешних сервисов)
     const ip = (req.headers['x-forwarded-for'] || '').toString().split(',')[0].trim() || req.ip;
@@ -105,10 +125,7 @@ app.post('/api/chat', async (req, res) => {
     // Отправляем в Telegram (асинхронно, не блокируем ответ)
     sendToTelegram(text, { page, referrer, location, answer: finalAnswer }).catch(e => console.error('Telegram:', e));
 
-    res.json({
-      answer: finalAnswer,
-      source: answer ? ((process.env.RAG_ENABLED || '').toLowerCase() === 'true' ? 'rag_or_knowledge' : 'knowledge') : 'fallback'
-    });
+    res.json({ answer: finalAnswer, source });
   } catch (e) {
     console.error(e);
     res.status(500).json({
