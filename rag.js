@@ -14,7 +14,23 @@ function normalize(s) {
 function tokenize(s) {
   const t = normalize(s);
   if (!t) return [];
-  return t.split(' ').filter(w => w.length >= 3);
+  return t
+    .split(' ')
+    .map((w) => stemRuSimple(w))
+    .filter(w => w.length >= 3);
+}
+
+// Очень простой "стеммер" для русских слов: обрезаем типичные окончания,
+// чтобы "загрузочная" и "загрузочную" считались ближе друг к другу.
+function stemRuSimple(w) {
+  if (!w) return w;
+  const endings = ['ями', 'ями', 'ами', 'ями', 'ями', 'ями', 'ыми', 'ими', 'ого', 'его', 'ому', 'ему', 'ами', 'ями', 'ах', 'ях', 'ой', 'ый', 'ий', 'ая', 'ое', 'ее', 'ую', 'юю', 'ам', 'ям', 'ом', 'ем', 'ах', 'ях', 'ы', 'и', 'а', 'я', 'е', 'у', 'ю', 'о'];
+  for (const end of endings) {
+    if (w.length > end.length + 2 && w.endsWith(end)) {
+      return w.slice(0, -end.length);
+    }
+  }
+  return w;
 }
 
 function loadIndex() {
@@ -34,7 +50,7 @@ function retrieve(query, chunks, k = 6) {
   if (qSet.size === 0) return [];
 
   const scored = chunks.map((c) => {
-    const cTokens = c.tokens || tokenize(c.text);
+    const cTokens = tokenize(c.text);
     let score = 0;
     for (const w of cTokens) if (qSet.has(w)) score += 1;
     // небольшой бонус, если точная фраза встречается
@@ -106,7 +122,31 @@ async function answerWithRag(question) {
   if (chunks.length === 0) return null;
 
   const top = retrieve(question, chunks, Number(process.env.RAG_TOP_K || 6));
-  const context = top.map((c, i) => {
+
+  // Добавляем соседние фрагменты того же источника, чтобы не потерять продолжение инструкции.
+  const byKey = new Map();
+  for (const c of chunks) {
+    const key = `${c.source || ''}|${c.chunk || 0}`;
+    if (!byKey.has(key)) byKey.set(key, c);
+  }
+  const expanded = [];
+  const seen = new Set();
+  for (const base of top) {
+    const baseChunk = Number(base.chunk || 0);
+    const src = base.source || '';
+    for (const offset of [-1, 0, 1]) {
+      const n = baseChunk + offset;
+      if (!n || n < 1) continue;
+      const key = `${src}|${n}`;
+      if (seen.has(key)) continue;
+      const c = byKey.get(key);
+      if (!c) continue;
+      seen.add(key);
+      expanded.push(c);
+    }
+  }
+
+  const context = expanded.map((c, i) => {
     const src = c.source ? `Источник: ${c.source}` : 'Источник: (неизвестно)';
     const page = c.page ? `, стр.: ${c.page}` : '';
     return `### Фрагмент ${i + 1}\n${src}${page}\n${c.text}`;
