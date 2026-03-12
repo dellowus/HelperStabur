@@ -52,9 +52,11 @@ async function callOpenRouterLLM({ apiKey, model, question, context, siteUrl }) 
   const url = 'https://openrouter.ai/api/v1/chat/completions';
   const sys = [
     'Ты — виртуальный помощник компании СТАБУР.',
-    'Отвечай кратко, по делу, на русском.',
+    'Отвечай на русском языке, аккуратно, без обрезанных слов и служебных символов.',
+    'Длина ответа — 2–5 предложений, по делу, без воды.',
     'Отвечай ТОЛЬКО опираясь на контекст из документов ниже. Если в контексте нет ответа — честно скажи, что информации нет, и предложи уточнить по почте help@psvyaz.ru.',
-    'Не выдумывай характеристики, цены, протоколы и интерфейсы.'
+    'Не выдумывай характеристики, цены, протоколы и интерфейсы, не придумывай номера моделей.',
+    'Не используй маркеры вроде ``` или ### в начале/конце ответа.'
   ].join(' ');
 
   const user = [
@@ -86,7 +88,15 @@ async function callOpenRouterLLM({ apiKey, model, question, context, siteUrl }) 
     throw new Error(`OpenRouter error ${res.status}: ${t}`);
   }
   const data = await res.json();
-  const text = data?.choices?.[0]?.message?.content?.trim();
+  let text = data?.choices?.[0]?.message?.content || '';
+
+  // Постобработка: убираем возможные маркеры ``` / ```json / ### и лишние пробелы
+  text = String(text)
+    .replace(/```[\s\S]*?```/g, m => m.replace(/```(?:json)?/g, '').replace(/```/g, ''))
+    .replace(/^#+\s*/gm, '')
+    .replace(/\s+$/g, '')
+    .trim();
+
   return text || null;
 }
 
