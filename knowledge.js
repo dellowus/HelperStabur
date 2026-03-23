@@ -7,11 +7,16 @@
 const PROTOCOLS_OFFICIAL_ANSWER =
   'По линейке СТАБУР поддерживаются протоколы и технологии: Modbus RTU/TCP, EtherCAT, CANopen, OPC UA, SSH, SFTP, OpenVPN, DMX512/RDM, Matter и Thread. Если нужны подробности по конкретному протоколу или конфигурации — уточните задачу.';
 
+/** Модельный ряд — закреплённый ответ (кнопка «Модельный ряд» и короткие вопросы; выше RAG). */
+const MODEL_RANGE_OFFICIAL_ANSWER =
+  'В модельном ряду СТАБУР: ПЛК, панели оператора (ПО), программируемые контроллеры (ПК), WEB‑ПО — конфигурации с диагоналями экрана от 5 до 24 дюймов. Плюс модули расширения (ввод-вывод и интерфейсы). Актуальные позиции и подбор конфигурации — на сайте psve.ru в каталоге и в сервисе «Выбрать конфигурацию».';
+
 const knowledge = [
   // Быстрые темы / типовые вопросы
   {
     keywords: ['модельный ряд', 'линейка', 'модели', 'ассортимент', 'каталог'],
-    answer: 'Модельный ряд СТАБУР включает: ПЛК, промышленные контроллеры, панели оператора (HMI) 5"–24", Web панели оператора, а также модули расширения (ввод-вывод и интерфейсы). Удобнее всего посмотреть актуальные позиции и подобрать конфигурацию через «Выбрать конфигурацию» и соответствующие разделы каталога на сайте.'
+    answer:
+      'Модельный ряд СТАБУР: ПЛК, ПО, ПК, WEB‑ПО — модели с диагоналями экрана от 5 до 24 дюймов; также модули расширения. Подробнее — в каталоге на сайте и в сервисе «Выбрать конфигурацию».'
   },
   // Прайс и цены
   {
@@ -98,6 +103,17 @@ function getPinnedAnswer(userMessage) {
   if (isProtocolsQuick || isGeneralProtocolsQuestion) {
     return PROTOCOLS_OFFICIAL_ANSWER;
   }
+
+  // Кнопка «Модельный ряд» и короткие вопросы — иначе RAG часто отвечает «в документах нет»
+  const isModelRangeQuick = text === 'модельный ряд' || /^модельный ряд[.!?…]*$/.test(text);
+  const isShortModelRangeQuestion =
+    text.includes('модельный ряд') &&
+    text.length <= 80 &&
+    !/[A-Za-zА-Яа-я]{2,}\d{2,}/.test(userMessage);
+  if (isModelRangeQuick || isShortModelRangeQuestion) {
+    return MODEL_RANGE_OFFICIAL_ANSWER;
+  }
+
   return null;
 }
 
@@ -112,4 +128,10 @@ function getAnswer(userMessage) {
   return null;
 }
 
-module.exports = { getAnswer, getPinnedAnswer, knowledge, PROTOCOLS_OFFICIAL_ANSWER };
+module.exports = {
+  getAnswer,
+  getPinnedAnswer,
+  knowledge,
+  PROTOCOLS_OFFICIAL_ANSWER,
+  MODEL_RANGE_OFFICIAL_ANSWER
+};
