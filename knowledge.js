@@ -3,6 +3,10 @@
  * Ответы подбираются по ключевым словам (можно позже заменить на поиск по тексту или LLM).
  */
 
+/** Официальный перечень протоколов СТАБУР (не менять без согласования с документацией). */
+const PROTOCOLS_OFFICIAL_ANSWER =
+  'По линейке СТАБУР поддерживаются протоколы и технологии: Modbus RTU/TCP, EtherCAT, CANopen, OPC UA, SSH, SFTP, OpenVPN, DMX512/RDM, Matter и Thread. Если нужны подробности по конкретному протоколу или конфигурации — уточните задачу.';
+
 const knowledge = [
   // Быстрые темы / типовые вопросы
   {
@@ -27,8 +31,9 @@ const knowledge = [
     answer: 'Модули расширения позволяют гибко конфигурировать контроллер: модули ввода-вывода и интерфейсов, установка в корзину прибора. До 16 модулей в 2 корзинах. Каталог: «Модули расширения» на сайте.'
   },
   {
-    keywords: ['протокол', 'protocol', 'обмен', 'связь', 'ethercat', 'modbus', 'opc', 'mqtt', 'canopen', 'profibus', 'profinet'],
-    answer: 'По протоколам обмена данными всё зависит от конкретной конфигурации/модулей и проекта. Напишите, какие протоколы вам нужны (например Modbus TCP/RTU, EtherCAT, OPC UA, MQTT и т.п.) — мы подскажем совместимость и оптимальную конфигурацию.'
+    keywords: ['протокол', 'protocol', 'обмен', 'связь', 'ethercat', 'modbus', 'canopen', 'opc'],
+    answer:
+      'По протоколам всё зависит от конкретной конфигурации и модулей. Общий перечень для СТАБУР: Modbus RTU/TCP, EtherCAT, CANopen, OPC UA, SSH, SFTP, OpenVPN, DMX512/RDM, Matter и Thread. Для уточнения по вашему проекту опишите задачу или напишите на help@psvyaz.ru.'
   },
   {
     keywords: ['интерфейс', 'interfaces', 'rs-485', 'rs485', 'rs-232', 'rs232', 'ethernet', 'usb', 'wifi', 'bluetooth', 'io-link', 'i/o link', 'дискрет', 'аналог'],
@@ -74,6 +79,28 @@ function normalize(s) {
 /**
  * Подбор ответа по тексту вопроса. Возвращает первый подходящий ответ или null.
  */
+/**
+ * Жёстко закреплённые ответы (выше RAG), чтобы LLM не «додумывала» списки.
+ */
+function getPinnedAnswer(userMessage) {
+  const text = normalize(userMessage);
+  if (!text) return null;
+
+  const isProtocolsQuick = /^протоколы?$/.test(text) || /^protocols?$/.test(text);
+  const isGeneralProtocolsQuestion =
+    text.includes('протокол') &&
+    (text.includes('какие') ||
+      text.includes('список') ||
+      text.includes('поддержива') ||
+      text.includes('есть ли') ||
+      text.includes('перечисл'));
+
+  if (isProtocolsQuick || isGeneralProtocolsQuestion) {
+    return PROTOCOLS_OFFICIAL_ANSWER;
+  }
+  return null;
+}
+
 function getAnswer(userMessage) {
   const text = normalize(userMessage);
   if (!text) return null;
@@ -85,4 +112,4 @@ function getAnswer(userMessage) {
   return null;
 }
 
-module.exports = { getAnswer, knowledge };
+module.exports = { getAnswer, getPinnedAnswer, knowledge, PROTOCOLS_OFFICIAL_ANSWER };

@@ -69,7 +69,7 @@ async function sendToTelegram(text, meta = {}) {
 }
 
 // Загрузка базы знаний для ответов
-const { getAnswer } = require('./knowledge');
+const { getAnswer, getPinnedAnswer } = require('./knowledge');
 
 function hasModelLikeCode(text) {
   // Примитивная эвристика: сочетание букв/цифр длиной >=4 (ETH232, PLC100, HMI07 и т.п.)
@@ -86,18 +86,22 @@ app.post('/api/chat', async (req, res) => {
       return res.status(400).json({ error: 'Пустое сообщение', answer: null });
     }
 
-    // 1) Пытаемся ответить через LLM+документы (RAG), если включено
-    let answer = null;
-    try {
-      if ((process.env.RAG_ENABLED || '').toLowerCase() === 'true') {
-        answer = await answerWithRag(text);
+    // 0) Закреплённые ответы (выше RAG) — чтобы LLM не выдумывала списки (например протоколы)
+    let answer = getPinnedAnswer(text);
+    let source = answer ? 'pinned' : 'fallback';
+
+    // 1) Пытаемся ответить через LLM+документы (RAG), если включено и pinned не сработал
+    if (!answer) {
+      try {
+        if ((process.env.RAG_ENABLED || '').toLowerCase() === 'true') {
+          answer = await answerWithRag(text);
+        }
+      } catch (e) {
+        console.error('RAG/LLM error:', e?.message || e);
       }
-    } catch (e) {
-      console.error('RAG/LLM error:', e?.message || e);
     }
 
     // 2) Если RAG не дал ответа — опционально берём базу знаний по ключевым словам
-    let source = 'fallback';
     if (!answer) {
       // Если вопрос выглядит как запрос по конкретной модели/индексу (ETH232 и т.п.),
       // лучше честно сказать, что точного ответа нет, чем давать общий текст.
@@ -105,7 +109,7 @@ app.post('/api/chat', async (req, res) => {
         answer = getAnswer(text);
         if (answer) source = 'knowledge';
       }
-    } else {
+    } else if (source !== 'pinned') {
       source = 'rag';
     }
     const footer = '\n\nВсе вопросы и уточнения пишите на help@psvyaz.ru';
